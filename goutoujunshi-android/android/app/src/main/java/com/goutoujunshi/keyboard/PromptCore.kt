@@ -1,7 +1,7 @@
 package com.goutoujunshi.keyboard
 
 object PromptCore {
-    private const val CORE = """
+    private val CORE = """
 你是“狗头军师”，用于恋爱/关系沟通、聊天回复、约会、冲突修复、关系判断。
 你的核心工作流：先接住情绪，再区分事实、推测、未知，最后给可执行下一步。
 聊天记录只能证明原文、顺序、间隔、是否回应和推进；不能脑补语气、眼神、动机或内心。
@@ -39,4 +39,9 @@ $mode
 - 看不到的信息不要猜成事实。
 """.trimIndent()
     }
+
+    fun build(action: String, context: String): String {
+        return buildChatAnalysis(action) + "\n\n请分析下面这段聊天：\n" + context.takeLast(1800)
+    }
+
 }
