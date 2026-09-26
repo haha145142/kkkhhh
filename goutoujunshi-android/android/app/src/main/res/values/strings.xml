@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">狗头军师</string>
+    <string name="ime_name">狗头军师 AI</string>
+    <string name="ime_subtype">中文</string>
+    <string name="accessibility_name">狗头军师聊天读取</string>
+    <string name="accessibility_desc">在用户主动启用后读取当前聊天界面的可见内容，用于生成回复建议；不会自动发送消息。</string>
+</resources>
