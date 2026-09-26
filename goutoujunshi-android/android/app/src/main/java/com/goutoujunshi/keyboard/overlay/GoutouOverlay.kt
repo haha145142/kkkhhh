@@ -328,4 +328,8 @@ class GoutouOverlay(private val ctx: Context) {
         params = null
         expanded = false
     }
+    fun toast(message: String) {
+        android.widget.Toast.makeText(ctx, message, android.widget.Toast.LENGTH_SHORT).show()
+    }
+
 }
