@@ -3,6 +3,7 @@ package com.goutoujunshi.keyboard.capture
 import android.accessibilityservice.AccessibilityService
 import android.graphics.Bitmap
 import android.graphics.Rect
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -12,12 +13,15 @@ import android.view.accessibility.AccessibilityNodeInfo
 import com.goutoujunshi.keyboard.ApiClient
 import com.goutoujunshi.keyboard.overlay.GoutouOverlay
 import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.Text
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions
+import java.util.concurrent.Executor
 import java.util.concurrent.Executors
 
 class GoutouAccessibilityService : AccessibilityService() {
     private val main = Handler(Looper.getMainLooper())
+    private val mainExecutor = Executor { command -> main.post(command) }
     private val worker = Executors.newSingleThreadExecutor()
     private var overlay: GoutouOverlay? = null
     private var lastSignature = ""
@@ -70,7 +74,7 @@ class GoutouAccessibilityService : AccessibilityService() {
         val nodeSnapshot = extractFromNodes(root)
         if (nodeSnapshot.messages.size >= 2) {
             acceptSnapshot(nodeSnapshot)
-        } else if (android.os.Build.VERSION.SDK_INT >= 30) {
+        } else if (Build.VERSION.SDK_INT >= 30) {
             overlay?.showStatus("正在读取聊天画面…")
             takeScreenShot(root)
         } else {
@@ -116,34 +120,29 @@ class GoutouAccessibilityService : AccessibilityService() {
     }
 
     private fun takeScreenShot(root: AccessibilityNodeInfo) {
-        val executor = main.asExecutor()
-        if (android.os.Build.VERSION.SDK_INT >= 34 && root.windowId != AccessibilityNodeInfo.UNDEFINED_WINDOW_ID) {
-            takeScreenshotOfWindow(root.windowId, executor, object : TakeScreenshotCallback {
+        if (Build.VERSION.SDK_INT >= 34 && root.windowId >= 0) {
+            takeScreenshotOfWindow(root.windowId, mainExecutor, object : TakeScreenshotCallback {
                 override fun onSuccess(screenshot: ScreenshotResult) {
                     handleBitmap(screenshot)
                 }
-
                 override fun onFailure(errorCode: Int) {
-                    takeScreenshot(Display.DEFAULT_DISPLAY, executor, object : TakeScreenshotCallback {
-                        override fun onSuccess(screenshot: ScreenshotResult) {
-                            handleBitmap(screenshot)
-                        }
-                        override fun onFailure(errorCode: Int) {
-                            overlay?.showStatus("截图被系统拒绝（代码 $errorCode），改用复制文字")
-                        }
-                    })
+                    takeDisplayScreenshot(mainExecutor)
                 }
             })
         } else {
-            takeScreenshot(Display.DEFAULT_DISPLAY, executor, object : TakeScreenshotCallback {
-                override fun onSuccess(screenshot: ScreenshotResult) {
-                    handleBitmap(screenshot)
-                }
-                override fun onFailure(errorCode: Int) {
-                    overlay?.showStatus("截图失败（代码 $errorCode），改用复制文字")
-                }
-            })
+            takeDisplayScreenshot(mainExecutor)
         }
+    }
+
+    private fun takeDisplayScreenshot(executor: Executor) {
+        takeScreenshot(Display.DEFAULT_DISPLAY, executor, object : TakeScreenshotCallback {
+            override fun onSuccess(screenshot: ScreenshotResult) {
+                handleBitmap(screenshot)
+            }
+            override fun onFailure(errorCode: Int) {
+                overlay?.showStatus("截图失败（代码 $errorCode），请复制聊天文字到键盘")
+            }
+        })
     }
 
     private fun handleBitmap(result: ScreenshotResult) {
@@ -155,32 +154,36 @@ class GoutouAccessibilityService : AccessibilityService() {
                 main.post { overlay?.showStatus("截图读取失败") }
                 return@execute
             }
+
             ocr.process(InputImage.fromBitmap(bitmap, 0))
-                .addOnSuccessListener(workerToMain) { text ->
+                .addOnSuccessListener(mainExecutor) { text: Text ->
                     val dm = resources.displayMetrics
-                    val rows = text.textBlocks.flatMap { it.lines }.mapNotNull { line ->
-                        val box = line.boundingBox ?: return@mapNotNull null
-                        if (box.top < dm.heightPixels * 0.12 || box.top > dm.heightPixels * 0.80) return@mapNotNull null
-                        val value = line.text.trim()
-                        if (value.length < 2) return@mapNotNull null
-                        val side = if (box.centerX() > dm.widthPixels * 0.55) "me" else "other"
-                        CapturedMessage(side, value, box.top, box.centerX())
-                    }.sortedBy { it.y }.takeLast(24)
+                    val rows = text.textBlocks
+                        .flatMap { block: Text.TextBlock -> block.lines }
+                        .mapNotNull { line: Text.Line ->
+                            val box = line.boundingBox ?: return@mapNotNull null
+                            if (box.top < dm.heightPixels * 0.12 || box.top > dm.heightPixels * 0.80) return@mapNotNull null
+                            val value = line.text.trim()
+                            if (value.length < 2) return@mapNotNull null
+                            val side = if (box.centerX() > dm.widthPixels * 0.55) "me" else "other"
+                            CapturedMessage(side, value, box.top, box.centerX())
+                        }
+                        .sortedBy { it.y }
+                        .takeLast(24)
+
                     if (rows.size >= 2) {
                         acceptSnapshot(ChatSnapshot(targetPkg, null, rows, "screenshot-ocr"))
                     } else {
-                        main.post { overlay?.showStatus("OCR 没识别到足够聊天文字；请复制消息后在键盘中分析") }
+                        overlay?.showStatus("OCR 没识别到足够聊天文字；请复制消息后在键盘中分析")
                     }
                     bitmap.recycle()
                 }
-                .addOnFailureListener(workerToMain) {
-                    main.post { overlay?.showStatus("OCR 失败：\${it.localizedMessage ?: "unknown"}") }
+                .addOnFailureListener(mainExecutor) { error ->
+                    overlay?.showStatus("OCR 失败：\${error.localizedMessage ?: "unknown"}")
                     bitmap.recycle()
                 }
         }
     }
-
-    private val workerToMain = main.asExecutor()
 
     private fun analyzeNow(action: String) {
         val snapshot = current ?: run {
@@ -190,11 +193,13 @@ class GoutouAccessibilityService : AccessibilityService() {
         if (analyzing) return
         analyzing = true
         overlay?.showLoading()
+
         val cfg = ApiClient.Config(
             prefs.getString("baseUrl", "https://api.deepseek.com") ?: "https://api.deepseek.com",
             prefs.getString("apiKey", "") ?: "",
             prefs.getString("model", "deepseek-flash") ?: "deepseek-flash"
         )
+
         worker.execute {
             val result = ApiClient.analyze(cfg, snapshot, action)
             main.post {
@@ -208,6 +213,7 @@ class GoutouAccessibilityService : AccessibilityService() {
     private fun fillText(text: String) {
         val root = rootInActiveWindow ?: return
         val input = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+
         if (input != null) {
             val args = Bundle().apply {
                 putCharSequence(
@@ -220,6 +226,7 @@ class GoutouAccessibilityService : AccessibilityService() {
                 return
             }
         }
+
         val cm = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
         cm.setPrimaryClip(android.content.ClipData.newPlainText("goutou_reply", text))
         overlay?.showStatus("已复制到剪贴板；请点微信输入框粘贴。")
