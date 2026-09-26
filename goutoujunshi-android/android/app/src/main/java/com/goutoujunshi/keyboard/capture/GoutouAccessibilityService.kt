@@ -179,7 +179,7 @@ class GoutouAccessibilityService : AccessibilityService() {
                     bitmap.recycle()
                 }
                 .addOnFailureListener(mainExecutor) { error ->
-                    overlay?.showStatus("OCR 失败：\${error.localizedMessage ?: "unknown"}")
+                    overlay?.showStatus("OCR 失败："+ (error.localizedMessage ?: "unknown") + "")
                     bitmap.recycle()
                 }
         }
@@ -205,7 +205,7 @@ class GoutouAccessibilityService : AccessibilityService() {
             main.post {
                 analyzing = false
                 result.onSuccess { overlay?.showAnalysis(it) }
-                    .onFailure { overlay?.showStatus("生成失败：\${it.message ?: "unknown"}") }
+                    .onFailure { overlay?.showStatus("生成失败："+ (it.message ?: "unknown") + "") }
             }
         }
     }
