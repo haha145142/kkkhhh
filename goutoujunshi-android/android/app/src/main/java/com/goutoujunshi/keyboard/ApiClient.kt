@@ -135,18 +135,11 @@ object ApiClient {
     }
 
     private fun extractJsonObject(raw: String): String {
-        val fenceJson = String(charArrayOf(96, 96, 96)) + "json"
-        val fence = String(charArrayOf(96, 96, 96))
         val cleaned = raw.trim()
-            .removePrefix(fenceJson)
-            .removePrefix(fence)
-            .removeSuffix(fence)
-            .trim()
-
         val start = cleaned.indexOf('{')
         val end = cleaned.lastIndexOf('}')
         if (start < 0 || end <= start) {
-            error("模型返回不是有效 JSON：${cleaned.take(600)}")
+            error("模型返回不是有效 JSON：" + raw.take(600))
         }
         return cleaned.substring(start, end + 1)
     }
