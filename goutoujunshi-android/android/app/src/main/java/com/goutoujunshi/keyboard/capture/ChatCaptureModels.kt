@@ -9,7 +9,7 @@ data class ChatSnapshot(
     val source: String
 ) {
     fun compact(): String = messages.takeLast(18).joinToString("\n") {
-        "\${if (it.side == "me") "我" else "对方"}：\${it.text}"
+        (if (it.side == "me") "我" else "对方") + "：" + it.text
     }
 }
 
