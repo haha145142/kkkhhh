@@ -366,7 +366,7 @@ new_group = """    private fun groupOcrLines(lines: List<OcrLine>): List<Msg> {
         }
     }
 """
-s = s[:start] + new_group + s[end:]
+capture_text = capture_text[:start] + new_group + capture_text[end:]\ncapture.write_text(capture_text, encoding="utf-8")
 
 # clear the queued flag in failure path as an extra safety guard
 replace_once(
