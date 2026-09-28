@@ -427,6 +427,12 @@ if "BuiltinLoveKnowledge.forSnapshot(snapshot)" not in cs:
 
 ka = ROOT / "integrations" / "jev_android" / "app" / "src" / "main" / "java" / "com" / "jev" / "probe" / "KnowledgeActivity.kt"
 ks = ka.read_text(encoding="utf-8")
+if "import com.jev.probe.core.kb.BuiltinLoveKnowledge" not in ks:
+    ks = ks.replace(
+        "import com.jev.probe.core.kb.Contact",
+        "import com.jev.probe.core.kb.BuiltinLoveKnowledge\nimport com.jev.probe.core.kb.Contact",
+        1
+    )
 if "renderBuiltinKernel()" not in ks:
     ks = ks.replace(
         "        container.addView(tabs())\n        if (tab == 0) renderNotes() else renderContacts()",
