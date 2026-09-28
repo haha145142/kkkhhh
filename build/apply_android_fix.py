@@ -7,8 +7,11 @@ CAP = SRC / "capture"
 
 def replace_once(path, old, new):
     s = path.read_text(encoding="utf-8")
-    if s.count(old) != 1:
-        raise SystemExit(f"Expected exactly one match in {path}")
+    count = s.count(old)
+    if count == 0 and new in s:
+        return
+    if count != 1:
+        raise SystemExit(f"Expected exactly one match in {path}, got {count}")
     path.write_text(s.replace(old, new), encoding="utf-8")
 
 capture = CAP / "ChatCaptureService.kt"
