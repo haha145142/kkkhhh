@@ -466,7 +466,7 @@ if "renderBuiltinKernel()" not in ks:
     }
 
 """
-    if (!ks.includes(marker)) throw new Error("KnowledgeActivity notes marker not found");
+    if marker not in ks: raise SystemExit("KnowledgeActivity notes marker not found")
     ks = ks.replace(marker, kernel_ui + marker, 1)
     ks = ks.replace(
         "container.addView(emptyCard(\"还没有笔记。写点该记住的事实：习惯、忌口、项目代号、约定过的时间。\"))",
