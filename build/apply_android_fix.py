@@ -197,3 +197,194 @@ if ss.count(old_help) != 1:
     raise SystemExit(f"Expected settings help text once, got {ss.count(old_help)}")
 settings.write_text(ss.replace(old_help, new_help), encoding="utf-8")
 print("WeChat fix added")
+
+
+
+# ---- Robust WeChat fallback --------------------------------------------
+# Latest 1.4 upstream can no longer rely on WeChat's accessibility text.
+# Keep the proven disguised-service path from 332_lab-jev-chat, but add a
+# screenshot/OCR fallback that works even when bkl/text is completely hidden.
+
+replace_once(
+    capture,
+    """    private var foregroundPkg: String? = null
+""",
+    """    private var foregroundPkg: String? = null
+    private var lastWindowClass: String = ""
+    private var wechatVisualQueued = false
+"""
+)
+
+replace_once(
+    capture,
+    """        if (event == null) return
+        if (!prefs.enabled) { main.post { overlay?.hide() }; return }
+
+        val type = event.eventType
+""",
+    """        if (event == null) return
+        if (!prefs.enabled) { main.post { overlay?.hide() }; return }
+
+        lastWindowClass = event.className?.toString() ?: lastWindowClass
+        val type = event.eventType
+"""
+)
+
+replace_once(
+    capture,
+    """        val adapter = adapters[pkg] ?: return
+        // Only act inside a chat window (the adapter returns null elsewhere).
+        val rawSnapshot = adapter.extract(root, resources) ?: return
+""",
+    """        val adapter = adapters[pkg]
+        if (adapter == null) {
+            if (pkg == WECHAT_PACKAGE && prefs.ocrFallback && isLikelyWeChatChat(root)) {
+                scheduleWeChatVisualCapture(root)
+            }
+            return
+        }
+        // Only act inside a chat window (the adapter returns null elsewhere).
+        val rawSnapshot = adapter.extract(root, resources) ?: run {
+            if (pkg == WECHAT_PACKAGE && prefs.ocrFallback && isLikelyWeChatChat(root)) {
+                scheduleWeChatVisualCapture(root)
+            }
+            return
+        }
+"""
+)
+
+replace_once(
+    capture,
+    """    // ------------------------------------------------------------------ OCR
+""",
+    """    // ------------------------------------------------------------------ WeChat visual fallback
+
+    /**
+     * True when the foreground WeChat window looks like a chat thread even if
+     * the message nodes have been completely hidden. The lower editable field
+     * is a stronger signal than a generic search box; the known ChattingUI
+     * activity name is accepted as an additional fast path.
+     */
+    private fun isLikelyWeChatChat(root: AccessibilityNodeInfo): Boolean {
+        if (root.packageName?.toString() != WECHAT_PACKAGE) return false
+        if (lastWindowClass.contains("ChattingUI", ignoreCase = true)) return true
+        val title = findTitleInActionBar(
+            root, Int.MAX_VALUE, resources.displayMetrics.widthPixels, resources, 0.12, 0.88
+        )
+        if (title.isNullOrBlank()) return false
+
+        val height = resources.displayMetrics.heightPixels
+        val minY = (height * 0.42f).toInt()
+        val stack = ArrayDeque<AccessibilityNodeInfo>()
+        stack.addLast(root)
+        var guard = 0
+        while (stack.isNotEmpty() && guard < 6000) {
+            guard++
+            val node = stack.removeLast()
+            if (node.isVisibleToUser && node.isEditable) {
+                val b = Rect()
+                node.getBoundsInScreen(b)
+                if (b.bottom > minY && b.width() >= 80 && b.height() >= 24) return true
+            }
+            for (i in node.childCount - 1 downTo 0) node.getChild(i)?.let { stack.addLast(it) }
+        }
+        return false
+    }
+
+    /**
+     * Coalesce WeChat's burst of content-changed events into one screenshot.
+     * The shared ScreenCapture throttle/backoff handles OEM screenshot limits;
+     * finishOcrSnapshot then deduplicates identical recognized transcripts.
+     */
+    private fun scheduleWeChatVisualCapture(root: AccessibilityNodeInfo) {
+        if (wechatVisualQueued || ocrBusy || reviewPending || analyzing) return
+        wechatVisualQueued = true
+        main.postDelayed({
+            wechatVisualQueued = false
+            if (!prefs.enabled) return@postDelayed
+            val live = rootInActiveWindow ?: return@postDelayed
+            if (live.packageName?.toString() != WECHAT_PACKAGE) return@postDelayed
+            if (!isLikelyWeChatChat(live)) return@postDelayed
+            val title = findTitleInActionBar(
+                live, Int.MAX_VALUE, resources.displayMetrics.widthPixels, resources, 0.12, 0.88
+            )
+            ocrCapture(title, emptyList(), WECHAT_PACKAGE, manual = false)
+        }, 850)
+    }
+
+    // ------------------------------------------------------------------ OCR
+"""
+)
+
+# Manual OCR is now explicitly allowed for WeChat; remove the old early return
+replace_once(
+    capture,
+    """        if (pkg == WECHAT_PACKAGE) {
+            overlay?.toast("当前 Android 版无法截取微信聊天画面，暂不支持微信")
+            return
+        }
+""",
+    ""
+)
+
+# Whole-screen OCR should infer sender from bubble side when the visible layout
+# is the usual left=incoming/right=outgoing WeChat arrangement.
+start = s.index("    private fun groupOcrLines(lines: List<OcrLine>): List<Msg> {")
+end = s.index("\n    /** Strip the read receipt", start)
+new_group = """    private fun groupOcrLines(lines: List<OcrLine>): List<Msg> {
+        val usable = lines
+            .filter { it.text.isNotBlank() && !PURE_TIME.matches(it.text.trim()) }
+            .sortedBy { it.bounds.top }
+        data class Group(val text: String, val centerX: Double, val count: Int)
+        val groups = ArrayList<Group>()
+        val buf = StringBuilder()
+        var prev: OcrLine? = null
+        var sumX = 0.0
+        var count = 0
+
+        fun flush() {
+            if (buf.isNotEmpty()) {
+                groups.add(Group(buf.toString(), if (count == 0) 0.0 else sumX / count, count))
+                buf.setLength(0)
+                sumX = 0.0
+                count = 0
+            }
+        }
+
+        for (l in usable) {
+            val p = prev
+            if (p != null) {
+                val gap = l.bounds.top - p.bounds.bottom
+                val lineHeight = maxOf(p.bounds.height(), 1)
+                if (gap > lineHeight * 1.2f) flush()
+            }
+            if (buf.isNotEmpty()) buf.append(' ')
+            buf.append(l.text.trim())
+            sumX += l.bounds.exactCenterX().toDouble()
+            count++
+            prev = l
+        }
+        flush()
+
+        val width = resources.displayMetrics.widthPixels.toDouble()
+        return groups.map { g ->
+            val side = if (g.centerX > width / 2.0) "me" else "other"
+            Msg(side, g.text)
+        }
+    }
+"""
+s = s[:start] + new_group + s[end:]
+
+# clear the queued flag in failure path as an extra safety guard
+replace_once(
+    capture,
+    """                is ScreenCapture.Result.Failed -> {
+                    ocrBusy = false
+""",
+    """                is ScreenCapture.Result.Failed -> {
+                    ocrBusy = false
+                    wechatVisualQueued = false
+"""
+)
+
+print("Robust WeChat OCR fallback applied")
