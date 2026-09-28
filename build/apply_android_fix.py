@@ -486,6 +486,43 @@ fi.write_text(ps, encoding="utf-8")
 print("Bundled kernel and system knowledge routing applied")
 
 # ---- WeChat OCR bottom boundary fix -----------------------------------
+old_ocr = """    private fun ocrWholeScreen(bmp: Bitmap, treeTitle: String?, pkg: String, manual: Boolean) {
+        val region = Rect(0, (bmp.height * TOP_CROP).toInt(), bmp.width, (bmp.height * BOTTOM_CROP).toInt())
+        ocr.recognize(bmp, region) { lines ->
+            runCatching { bmp.recycle() }
+            val msgs = groupOcrLines(lines)
+            val title = treeTitle?.takeIf { it.isNotBlank() }
+                ?: lines.firstOrNull()?.text?.trim()?.take(24)
+            finishOcrSnapshot(ChatSnapshot(title, msgs, note = OCR_NOTE), pkg, manual)
+        }
+    }
+"""
+new_ocr = """    private fun ocrWholeScreen(bmp: Bitmap, treeTitle: String?, pkg: String, manual: Boolean) {
+        val top = (bmp.height * TOP_CROP).toInt().coerceIn(0, bmp.height - 1)
+        var bottom = (bmp.height * BOTTOM_CROP).toInt()
+        if (pkg == WECHAT_PACKAGE) {
+            val live = rootInActiveWindow
+            val input = live?.let { findEditable(it) }
+            if (input != null) {
+                val b = Rect()
+                input.getBoundsInScreen(b)
+                val mapped = ((b.top - ocr.originY) * ocr.scaleY).toInt() - 10
+                if (mapped > top + 120) bottom = mapped
+            } else {
+                bottom = (bmp.height * 0.93f).toInt()
+            }
+        }
+        bottom = bottom.coerceIn(top + 1, bmp.height)
+        val region = Rect(0, top, bmp.width, bottom)
+        ocr.recognize(bmp, region) { lines ->
+            runCatching { bmp.recycle() }
+            val msgs = groupOcrLines(lines)
+            val title = treeTitle?.takeIf { it.isNotBlank() }
+                ?: lines.firstOrNull()?.text?.trim()?.take(24)
+            finishOcrSnapshot(ChatSnapshot(title, msgs, note = OCR_NOTE), pkg, manual)
+        }
+    }
+"""
 wechat_capture_src = CAP / "ChatCaptureService.kt"
 cc = wechat_capture_src.read_text(encoding="utf-8")
 if old_ocr not in cc:
