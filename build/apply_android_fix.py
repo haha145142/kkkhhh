@@ -452,7 +452,7 @@ if "renderBuiltinKernel()" not in ks:
                 12f, sub
             ).apply { setPadding(0, dp(4), 0, dp(8)) })
             topics.forEach { t ->
-                val row = LinearLayout(this).apply {
+                val row = LinearLayout(this@KnowledgeActivity).apply {
                     orientation = LinearLayout.VERTICAL
                     setPadding(0, dp(7), 0, dp(7))
                 }
