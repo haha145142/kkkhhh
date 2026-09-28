@@ -484,3 +484,12 @@ ps = ps.replace(
 fi.write_text(ps, encoding="utf-8")
 
 print("Bundled kernel and system knowledge routing applied")
+
+# ---- WeChat OCR bottom boundary fix -----------------------------------
+wechat_capture_src = CAP / "ChatCaptureService.kt"
+cc = wechat_capture_src.read_text(encoding="utf-8")
+if old_ocr not in cc:
+    raise SystemExit("WeChat ocrWholeScreen function not found")
+wechat_capture_src.write_text(cc.replace(old_ocr, new_ocr, 1), encoding="utf-8")
+print("WeChat OCR bottom boundary fixed")
+
