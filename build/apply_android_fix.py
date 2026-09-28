@@ -317,16 +317,6 @@ replace_once(
 )
 
 # Manual OCR is now explicitly allowed for WeChat; remove the old early return
-replace_once(
-    capture,
-    """        if (pkg == WECHAT_PACKAGE) {
-            overlay?.toast("当前 Android 版无法截取微信聊天画面，暂不支持微信")
-            return
-        }
-""",
-    ""
-)
-
 # Whole-screen OCR should infer sender from bubble side when the visible layout
 # is the usual left=incoming/right=outgoing WeChat arrangement.
 start = s.index("    private fun groupOcrLines(lines: List<OcrLine>): List<Msg> {")
