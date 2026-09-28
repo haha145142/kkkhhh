@@ -440,7 +440,7 @@ if "renderBuiltinKernel()" not in ks:
         1
     )
     marker = "    // ----------------------------------------------------------------- notes\n"
-    kernel_ui = String.raw"""    private fun renderBuiltinKernel() {
+    kernel_ui = r"""    private fun renderBuiltinKernel() {
         val topics = BuiltinLoveKnowledge.allTopics()
         container.addView(card().apply {
             addView(text(
