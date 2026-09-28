@@ -142,6 +142,19 @@ new_wechat = """class WeChatAdapter : ChatAppAdapter {
         val width = res.displayMetrics.widthPixels
         val bubbles = ArrayList<Triple<Int, Int, String>>() // top, centerX, text
         val bubbleRects = ArrayList<BubbleRect>()
+        val contentIds = setOf(
+            "com.tencent.mm:id/bkl",
+            "com.tencent.mm:id/bkf",
+            "com.tencent.mm:id/ao9",
+            "com.tencent.mm:id/iof",
+            "com.tencent.mm:id/bkm"
+        )
+        val rowIds = setOf(
+            "com.tencent.mm:id/bn1",
+            "com.tencent.mm:id/bot",
+            "com.tencent.mm:id/bop",
+            "com.tencent.mm:id/igc"
+        )
         var firstBubbleTop = Int.MAX_VALUE
         var isChat = false
 
@@ -153,7 +166,7 @@ new_wechat = """class WeChatAdapter : ChatAppAdapter {
             val node = stack.removeLast()
             val id = node.viewIdResourceName
             val text = node.text?.toString()
-            if (id == BUBBLE_ID) {
+            if (contentIds.contains(id) || rowIds.contains(id)) {
                 val b = Rect()
                 node.getBoundsInScreen(b)
                 if (b.width() > 0 && b.height() > 0) {
@@ -161,7 +174,7 @@ new_wechat = """class WeChatAdapter : ChatAppAdapter {
                     if (b.top < firstBubbleTop) firstBubbleTop = b.top
                     val side = if (b.centerX() > width / 2) "me" else "other"
                     bubbleRects.add(BubbleRect(Rect(b), side))
-                    if (!text.isNullOrBlank()) {
+                    if (!text.isNullOrBlank() && (contentIds.contains(id) || id == "com.tencent.mm:id/bkl")) {
                         bubbles.add(Triple(b.top, b.centerX(), text))
                     }
                 }
