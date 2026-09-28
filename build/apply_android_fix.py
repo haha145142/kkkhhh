@@ -397,3 +397,84 @@ replace_once(
 )
 
 print("Robust WeChat OCR fallback applied")
+
+
+# ---- Bundled Goutoujunshi kernel + auto topic routing -----------------
+builtin_src = Path(__file__).resolve().parent / "BuiltinLoveKnowledge.kt"
+kernel_dst = SRC / "core" / "kb" / "BuiltinLoveKnowledge.kt"
+kernel_dst.write_text(builtin_src.read_text(encoding="utf-8"), encoding="utf-8")
+
+ctx = SRC / "core" / "kb" / "ContextBuilder.kt"
+cs = ctx.read_text(encoding="utf-8")
+if "BuiltinLoveKnowledge.forSnapshot(snapshot)" not in cs:
+    old = """        // 3. Notes — always-on ones plus keyword hits.
+        val enabled = store.notes().filter { it.enabled }
+        val alwaysOn = enabled.filter { it.alwaysOn }
+        val hits = matchNotes(enabled.filter { !it.alwaysOn }, snapshot)
+"""
+    new = """        // 3. System knowledge is always present; topic modules are auto-routed
+        // from the current conversation. User notes are additional context.
+        val builtin = BuiltinLoveKnowledge.forSnapshot(snapshot)
+        val enabled = store.notes().filter { it.enabled }
+        val alwaysOn = builtin.filter { it.alwaysOn } + enabled.filter { it.alwaysOn }
+        val hits = builtin.filter { !it.alwaysOn } +
+            matchNotes(enabled.filter { !it.alwaysOn }, snapshot)
+"""
+    if cs.count(old) != 1:
+        raise SystemExit("ContextBuilder notes block not found")
+    cs = cs.replace(old, new, 1)
+    ctx.write_text(cs, encoding="utf-8")
+
+ka = ROOT / "integrations" / "jev_android" / "app" / "src" / "main" / "java" / "com" / "jev" / "probe" / "KnowledgeActivity.kt"
+ks = ka.read_text(encoding="utf-8")
+if "renderBuiltinKernel()" not in ks:
+    ks = ks.replace(
+        "        container.addView(tabs())\n        if (tab == 0) renderNotes() else renderContacts()",
+        "        container.addView(tabs())\n        if (tab == 0) { renderBuiltinKernel(); renderNotes() } else renderContacts()",
+        1
+    )
+    marker = "    // ----------------------------------------------------------------- notes\n"
+    kernel_ui = String.raw"""    private fun renderBuiltinKernel() {
+        val topics = BuiltinLoveKnowledge.allTopics()
+        container.addView(card().apply {
+            addView(text(
+                "狗头军师系统知识内核 · 已内置 " + BuiltinLoveKnowledge.builtinCount() + " 个模块",
+                15f, ink, bold = true
+            ))
+            addView(text(
+                "这些不是你的私人笔记，而是每次分析都会参与的恋爱判断方法。系统会根据当前微信聊天自动匹配相关模块。",
+                12f, sub
+            ).apply { setPadding(0, dp(4), 0, dp(8)) })
+            topics.forEach { t ->
+                val row = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setPadding(0, dp(7), 0, dp(7))
+                }
+                row.addView(text(t.title, 13.5f, ink, bold = true))
+                row.addView(text(t.content, 11.5f, sub).apply {
+                    setPadding(0, dp(2), 0, 0)
+                })
+                addView(row)
+            }
+        })
+    }
+
+"""
+    if (!ks.includes(marker)) throw new Error("KnowledgeActivity notes marker not found");
+    ks = ks.replace(marker, kernel_ui + marker, 1)
+    ks = ks.replace(
+        "container.addView(emptyCard(\"还没有笔记。写点该记住的事实：习惯、忌口、项目代号、约定过的时间。\"))",
+        "container.addView(emptyCard(\"你还没有私人笔记。系统知识内核已经内置；这里的笔记用于补充你自己和对方的具体事实。\"))",
+        1
+    )
+    ka.write_text(ks, encoding="utf-8")
+
+fi = ROOT / "integrations" / "jev_android" / "app" / "src" / "main" / "java" / "com" / "jev" / "probe" / "core" / "Prefs.kt"
+ps = fi.read_text(encoding="utf-8")
+ps = ps.replace(
+    'const val DEFAULT_REL = "对方是我的伴侣；from=me 的是我发的，from=other 的是对方发的"',
+    'const val DEFAULT_REL = "关系未指定；from=me 是我，from=other 是对方；先根据聊天行为判断关系阶段"'
+)
+fi.write_text(ps, encoding="utf-8")
+
+print("Bundled kernel and system knowledge routing applied")
