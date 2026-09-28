@@ -271,8 +271,8 @@ replace_once(
         val title = findTitleInActionBar(
             root, Int.MAX_VALUE, resources.displayMetrics.widthPixels, resources, 0.12, 0.88
         )
-        if (title.isNullOrBlank()) return false
-
+        // A real ChattingUI activity is enough. Otherwise use the lower input
+        // as the primary signal; the title may itself be hidden by WeChat.
         val height = resources.displayMetrics.heightPixels
         val minY = (height * 0.42f).toInt()
         val stack = ArrayDeque<AccessibilityNodeInfo>()
