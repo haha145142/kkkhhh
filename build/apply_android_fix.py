@@ -324,6 +324,7 @@ replace_once(
             val title = findTitleInActionBar(
                 live, Int.MAX_VALUE, resources.displayMetrics.widthPixels, resources, 0.12, 0.88
             )
+            overlay?.showIdle(title)
             ocrCapture(title, emptyList(), WECHAT_PACKAGE, manual = false)
         }, 850)
     }
