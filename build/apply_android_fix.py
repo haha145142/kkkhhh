@@ -322,8 +322,9 @@ replace_once(
 # Manual OCR is now explicitly allowed for WeChat; remove the old early return
 # Whole-screen OCR should infer sender from bubble side when the visible layout
 # is the usual left=incoming/right=outgoing WeChat arrangement.
-start = s.index("    private fun groupOcrLines(lines: List<OcrLine>): List<Msg> {")
-end = s.index("\n    /** Strip the read receipt", start)
+capture_text = capture.read_text(encoding="utf-8")
+start = capture_text.index("    private fun groupOcrLines(lines: List<OcrLine>): List<Msg> {")
+end = capture_text.index("\n    /** Strip the read receipt", start)
 new_group = """    private fun groupOcrLines(lines: List<OcrLine>): List<Msg> {
         val usable = lines
             .filter { it.text.isNotBlank() && !PURE_TIME.matches(it.text.trim()) }
