@@ -1,0 +1,38 @@
+name: Build Goutoujunshi Android APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout build workspace
+        uses: actions/checkout@v4
+      - name: Checkout upstream Goutoujunshi Jev Chat
+        uses: actions/checkout@v4
+        with:
+          repository: shengjidaguai-china/goutoujunshi-jev-chat
+          path: upstream
+      - name: Apply Android integration
+        run: python3 build/apply_android_fix.py
+      - name: Build and test APK
+        working-directory: upstream/integrations/jev_android
+        run: ./gradlew :app:testDebugUnitTest :app:assembleDebug --no-daemon
+      - name: Copy APK
+        run: cp upstream/integrations/jev_android/app/build/outputs/apk/debug/app-debug.apk goutoujunshi-jev-chat-android.apk
+      - name: APK metadata
+        run: |
+          file goutoujunshi-jev-chat-android.apk
+          sha256sum goutoujunshi-jev-chat-android.apk
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: goutoujunshi-jev-chat-android-apk
+          path: goutoujunshi-jev-chat-android.apk
+          retention-days: 14
