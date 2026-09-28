@@ -85,3 +85,115 @@ s = s[:idx] + object_fallback + s[idx:]
 reply.write_text(s, encoding="utf-8")
 
 print("Android patch applied")
+
+
+# ---- WeChat capture fix -------------------------------------------------
+# The upstream build shipped the WeChat adapter but did not register it in
+# ChatCaptureService, and explicitly treated WeChat as unsupported. Register
+# it, keep the bubble visible in WeChat, and use per-bubble OCR when WeChat's
+# node tree hides message text.
+
+replace_once(
+    capture,
+    """private val adapters = listOf(
+        WeChatAdapter(),
+        QQAdapter(),
+        XAdapter(),
+        FeishuAdapter()
+    ).associateBy { it.pkg }""",
+    """private val adapters = listOf(
+        WeChatAdapter(),
+        QQAdapter(),
+        XAdapter(),
+        FeishuAdapter()
+    ).associateBy { it.pkg }"""
+)
+
+replace_once(
+    capture,
+    "                    fg == WECHAT_PACKAGE ||\n",
+    ""
+)
+
+replace_once(
+    capture,
+    """        if (pkg == WECHAT_PACKAGE) {
+            overlay?.toast("当前 Android 版无法截取微信聊天画面，暂不支持微信")
+            return
+        }
+""",
+    ""
+)
+
+# Replace the WeChat adapter with a version that retains bubble rectangles even
+# when WeChat strips the text from the accessibility node. This lets the shared
+# OCR path recognize one bubble at a time and infer me/other from position.
+wechat = CAP / "ChatAppAdapter.kt"
+ws = wechat.read_text(encoding="utf-8")
+wstart = ws.index("class WeChatAdapter : ChatAppAdapter {")
+wend = ws.index("\n/**\n * Mobile QQ", wstart)
+new_wechat = """class WeChatAdapter : ChatAppAdapter {
+    override val pkg = "com.tencent.mm"
+
+    override fun extract(root: AccessibilityNodeInfo, res: Resources): ChatSnapshot? {
+        val width = res.displayMetrics.widthPixels
+        val bubbles = ArrayList<Triple<Int, Int, String>>() // top, centerX, text
+        val bubbleRects = ArrayList<BubbleRect>()
+        var firstBubbleTop = Int.MAX_VALUE
+        var isChat = false
+
+        val stack = ArrayDeque<AccessibilityNodeInfo>()
+        stack.addLast(root)
+        var guard = 0
+        while (stack.isNotEmpty() && guard < 8000) {
+            guard++
+            val node = stack.removeLast()
+            val id = node.viewIdResourceName
+            val text = node.text?.toString()
+            if (id == BUBBLE_ID) {
+                val b = Rect()
+                node.getBoundsInScreen(b)
+                if (b.width() > 0 && b.height() > 0) {
+                    isChat = true
+                    if (b.top < firstBubbleTop) firstBubbleTop = b.top
+                    val side = if (b.centerX() > width / 2) "me" else "other"
+                    bubbleRects.add(BubbleRect(Rect(b), side))
+                    if (!text.isNullOrBlank()) {
+                        bubbles.add(Triple(b.top, b.centerX(), text))
+                    }
+                }
+            }
+            for (i in node.childCount - 1 downTo 0) node.getChild(i)?.let { stack.addLast(it) }
+        }
+
+        if (!isChat) return null
+
+        val title = findWeChatTitle(root, firstBubbleTop, width, res)
+        if (bubbles.isEmpty()) {
+            return ChatSnapshot(title, emptyList(), bubbleRects.sortedBy { it.rect.top })
+        }
+
+        bubbles.sortBy { it.first }
+        val msgs = bubbles.map { (_, cx, text) ->
+            Msg(if (cx > width / 2) "me" else "other", text)
+        }
+        return ChatSnapshot(title, msgs, bubbleRects.sortedBy { it.rect.top })
+    }
+
+    companion object {
+        private const val BUBBLE_ID = "com.tencent.mm:id/bkl"
+    }
+}
+
+"""
+ws = ws[:wstart] + new_wechat + ws[wend:]
+wechat.write_text(ws, encoding="utf-8")
+
+settings = ROOT / "integrations" / "jev_android" / "app" / "src" / "main" / "java" / "com" / "jev" / "probe" / "SettingsActivity.kt"
+ss = settings.read_text(encoding="utf-8")
+old_help = "可见聊天画面的文字可用本地 OCR 识别；当前 Android 预览版无法截取微信聊天画面，暂不支持微信。"
+new_help = "微信支持：聊天正文不可读时会自动按气泡截图 OCR；首次识别后请核对原文与说话人。"
+if ss.count(old_help) != 1:
+    raise SystemExit(f"Expected settings help text once, got {ss.count(old_help)}")
+settings.write_text(ss.replace(old_help, new_help), encoding="utf-8")
+print("WeChat fix added")
