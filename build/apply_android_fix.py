@@ -36,11 +36,11 @@ replace_once(
 reply = JEV / "ReplyClient.kt"
 s = reply.read_text(encoding="utf-8")
 start = s.index("    fun draft(")
-end = s.index("    /** The background + history preamble.", start)
+end = s.index("    /**", start)
 new_draft = """    fun draft(snapshot: ChatSnapshot, relationship: String, ctx: ChatContext? = null,
               judgment: Analysis? = null): List<String> {
         if (GoutouGuidance.explicitBoundary(snapshot)) return emptyList()
-        val sys = UnifiedLovePrompt.SYSTEM + "\\n\\n" + GoutouGuidance.draftRules +
+        val sys = UnifiedLovePrompt.SYSTEM + "\n\n" + GoutouGuidance.draftRules +
             "只输出一个 JSON 对象，不要解释，不要输出 Markdown。"
         val user = UnifiedLovePrompt.replyUser(snapshot, relationship, ctx, judgment)
         return parseThree(chat(sys, user, temperature = 0.8))
