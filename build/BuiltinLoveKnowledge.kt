@@ -60,7 +60,7 @@ object BuiltinLoveKnowledge {
     fun forSnapshot(snapshot: ChatSnapshot): List<Note> {
         val haystack = buildString {
             append(snapshot.title?.lowercase().orEmpty())
-            snapshot.messages.takeLast(12).forEach { append('\\n').append(it.text.lowercase()) }
+            snapshot.messages.takeLast(12).forEach { append('\n').append(it.text.lowercase()) }
         }
         val hits = topics.filter { topic ->
             topic.tags.any { tag -> tag.isNotBlank() && haystack.contains(tag.lowercase()) }
